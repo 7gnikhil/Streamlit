@@ -6,3 +6,11 @@ python-dotenv
 numpy 
 Pillow
 pytesseract
+streamlit
+pandas
+numpy
+plotly  # <<< THIS WAS LIKELY MISSING OR MISSPELLED
+requests
+python-dotenv
+google-generativeai
+PyMuPDF
