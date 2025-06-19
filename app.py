@@ -5,14 +5,21 @@ import plotly.express as px
 import random
 import requests  # For GitLab API calls
 from datetime import datetime  # For timestamping attempts
-import os  # Import os to access environment variables
-from dotenv import load_dotenv  # Import load_dotenv
+import os
+from dotenv import load_dotenv # Import load_dotenv
 
 # Load environment variables from .env file (if it exists)
+# This should be called early, preferably once.
 load_dotenv()
 
+# ---- DEBUGGING PAT ----
+# These prints are helpful for diagnosing .env loading issues.
+# Comment out or remove them once your PAT is loading correctly.
+print(f"DEBUG: GITLAB_PAT from env: {os.getenv('GITLAB_PAT')}")
+print(f"DEBUG: GITLAB_URL from env: {os.getenv('GITLAB_URL')}")
+# ---- END DEBUGGING ----
+
 # --- 0. STYLING ---
-# (You'll need to create/update 'style.css' in the same directory)
 def local_css(file_name):
     try:
         with open(file_name) as f:
@@ -58,7 +65,7 @@ QUESTIONS_DB = [
         "explanation": "`git log` is used to view the commit history of a repository, showing commit hashes, authors, dates, and messages.",
         "resource_link": "https://git-scm.com/book/en/v2/Git-Basics-Viewing-the-Commit-History"
     },
-    # Medium Difficulty (5 questions)
+    # Medium Difficulty (6 questions including Q15)
     {
         "id": 6, "topic": "Branching", "difficulty": "Medium",
         "text": "What is the command to create a new branch named 'feature-xyz' AND switch to it in one step?",
@@ -94,7 +101,19 @@ QUESTIONS_DB = [
         "explanation": "`git stash` takes your uncommitted changes (both staged and unstaged), saves them away for later use, and then reverts them from your working copy, leaving it clean. You can re-apply them later with `git stash pop`.",
         "resource_link": "https://git-scm.com/book/en/v2/Git-Tools-Stashing-and-Cleaning"
     },
-    # High Difficulty (5 questions)
+    { # Question 15 was here in original list, moved to maintain difficulty grouping
+        "id": 15, "topic": "Git Tags", "difficulty": "Medium",
+        "text": "What is the primary purpose of using `git tag`?",
+        "options": [
+            "To temporarily save changes like `git stash`.",
+            "To mark specific points in a repository's history as being important, typically used for releases (e.g., v1.0).",
+            "To create a new branch for experimental features.",
+            "To write notes or comments about a specific commit."
+        ], "correct_answer": "To mark specific points in a repository's history as being important, typically used for releases (e.g., v1.0).",
+        "explanation": "Git tags are used to create a permanent marker for a specific commit, often to denote a release version (like `v1.0.0`). There are lightweight tags and annotated tags (which are full Git objects).",
+        "resource_link": "https://git-scm.com/book/en/v2/Git-Basics-Tagging"
+    },
+    # High Difficulty (4 questions)
     {
         "id": 11, "topic": "Rebasing", "difficulty": "High",
         "text": "What is a primary difference in outcome between `git merge` and `git rebase` when integrating changes from one branch to another?",
@@ -141,26 +160,16 @@ QUESTIONS_DB = [
             "Editing the commit message via the GitLab UI."
         ], "correct_answer": "`git reset --hard HEAD~1` (locally) then `git push --force` (to remote)",
         "explanation": "To remove a commit from shared history (dangerous, rewrites history), you would `git reset` locally to move the branch pointer before the bad commit, then `git push --force`. `git revert` creates a *new* commit that undoes the changes, but the original bad commit remains in history. For thorough cleaning of sensitive data, tools like `git filter-repo` or BFG Repo-Cleaner are recommended.",
-        "resource_link": "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository"
-    },
-    {
-        "id": 15, "topic": "Git Tags", "difficulty": "Medium",
-        "text": "What is the primary purpose of using `git tag`?",
-        "options": [
-            "To temporarily save changes like `git stash`.",
-            "To mark specific points in a repository's history as being important, typically used for releases (e.g., v1.0).",
-            "To create a new branch for experimental features.",
-            "To write notes or comments about a specific commit."
-        ], "correct_answer": "To mark specific points in a repository's history as being important, typically used for releases (e.g., v1.0).",
-        "explanation": "Git tags are used to create a permanent marker for a specific commit, often to denote a release version (like `v1.0.0`). There are lightweight tags and annotated tags (which are full Git objects).",
-        "resource_link": "https://git-scm.com/book/en/v2/Git-Basics-Tagging"
+        "resource_link": "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository" # Note: GitHub link, but principle is Git
     }
 ]
 
 # --- HELPER FUNCTION TO GET QUIZ QUESTIONS ---
 def get_quiz_questions(num_questions=15):
-    difficulty_order = {"Low": 0, "Medium": 1, "High": 2}
-    
+    # Ensure questions are available
+    if not QUESTIONS_DB:
+        return []
+
     low_diff = [q for q in QUESTIONS_DB if q['difficulty'] == 'Low']
     medium_diff = [q for q in QUESTIONS_DB if q['difficulty'] == 'Medium']
     high_diff = [q for q in QUESTIONS_DB if q['difficulty'] == 'High']
@@ -172,11 +181,19 @@ def get_quiz_questions(num_questions=15):
     num_per_difficulty = num_questions // 3
     extra = num_questions % 3
     
+    counts = [num_per_difficulty] * 3
+    for i in range(extra):
+        counts[i % 3] += 1 # Distribute extras (e.g., Low, then Medium, then High if 3 extras)
+
     selected_questions = []
-    selected_questions.extend(low_diff[:num_per_difficulty + (1 if extra > 0 else 0)])
-    selected_questions.extend(medium_diff[:num_per_difficulty + (1 if extra > 1 else 0)])
-    selected_questions.extend(high_diff[:num_per_difficulty])
+    selected_questions.extend(low_diff[:counts[0]])
+    selected_questions.extend(medium_diff[:counts[1]])
+    selected_questions.extend(high_diff[:counts[2]])
     
+    # If the DB has fewer questions than requested in certain categories,
+    # selected_questions might be shorter than num_questions.
+    # The slice [:num_questions] ensures we don't exceed num_questions if selected_questions is somehow longer
+    # (e.g. if counts logic had a bug) but primarily serves to take all if shorter.
     final_questions = selected_questions[:num_questions]
     random.shuffle(final_questions) 
     return final_questions
@@ -191,25 +208,16 @@ def fetch_gitlab_user_by_username(username: str):
     pat_from_secrets = None
 
     try:
-        # This is the part that can raise StreamlitSecretNotFoundError if secrets.toml is missing
-        # We attempt to get the values. If the file is missing, the error will be caught.
-        # If the file exists but keys are missing, .get() will return None.
-        gitlab_url_from_secrets = st.secrets.get("GITLAB_URL")
-        pat_from_secrets = st.secrets.get("GITLAB_PAT")
-    except st.errors.StreamlitAPIException as e: # More general Streamlit API exception
-        # This can catch issues if st.secrets itself is not properly initialized
-        # but often StreamlitSecretNotFoundError is the primary one for missing files.
+        # Attempt to get values from st.secrets.
+        # .get() returns None if keys are missing (secrets file exists but key isn't in it).
+        # StreamlitAPIException might occur if secrets file is malformed or st.secrets has other issues.
+        if hasattr(st, 'secrets'):
+            gitlab_url_from_secrets = st.secrets.get("GITLAB_URL")
+            pat_from_secrets = st.secrets.get("GITLAB_PAT")
+    except st.errors.StreamlitAPIException as e:
         st.warning(f"Note: Could not access Streamlit secrets (API Exception): {e}. Will try .env file.")
-        # Variables will remain None
     except Exception as e: # Catch any other unexpected error during secrets access
-        # This is a broader catch. StreamlitSecretNotFoundError *should* be caught by the above
-        # or be a subclass of StreamlitAPIException for some versions.
-        # For robustness, we check the error message if it's a generic Exception.
-        if "StreamlitSecretNotFoundError" in str(type(e).__name__) or "No secrets found" in str(e):
-             st.info("Note: Streamlit secrets file not found. Will try .env file.")
-        else:
-            st.warning(f"Note: An unexpected error occurred while accessing Streamlit secrets: {type(e).__name__} - {e}. Will try .env file.")
-        # Variables will remain None
+        st.warning(f"Note: An unexpected error occurred while accessing Streamlit secrets: {type(e).__name__} - {e}. Will try .env file.")
 
     # Fallback to environment variables (loaded by python-dotenv from .env)
     gitlab_url_from_env = os.getenv("GITLAB_URL")
@@ -221,13 +229,13 @@ def fetch_gitlab_user_by_username(username: str):
 
     # Default to public gitlab.com if no URL is configured anywhere
     if gitlab_url_config is None:
-        gitlab_url_config = "https://code.swecha.org/"
+        gitlab_url_config = "https://gitlab.com/" # General default
     gitlab_url = gitlab_url_config.rstrip('/') # Ensure no trailing slash
 
 
     if not pat_config:
         msg = "Critical: GitLab PAT not configured. Please set GITLAB_PAT in Streamlit secrets (.streamlit/secrets.toml) or in a .env file for local development."
-        st.error(msg) # Show error in UI as this is critical
+        # No st.error here, return dict and let caller handle UI
         return {"error": msg}
 
     if not username:
@@ -238,7 +246,7 @@ def fetch_gitlab_user_by_username(username: str):
 
     try:
         response = requests.get(api_url, headers=headers, timeout=10)
-        response.raise_for_status()
+        response.raise_for_status() # Raises HTTPError for bad responses (4XX, 5XX)
         users = response.json()
         if users: # API returns a list, even for a unique username query
             return users[0] # Return the first user found
@@ -246,46 +254,33 @@ def fetch_gitlab_user_by_username(username: str):
             return None # User not found
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 401:
-            return {"error": "Unauthorized. Check your GitLab PAT and its scopes (needs 'read_user'). Ensure it's correctly set in secrets or .env."}
+            return {"error": "Unauthorized: Check your GitLab PAT and its 'read_user' scope. Ensure it's correctly set in secrets or .env."}
         return {"error": f"GitLab API request failed: {e.response.status_code} - {e.response.text}"}
-    except requests.exceptions.RequestException as e:
-        return {"error": f"Error connecting to GitLab: {e}"}
-    except Exception as e:
-        return {"error": f"An unexpected error occurred: {e}"}
+    except requests.exceptions.RequestException as e: # Covers DNS errors, connection timeouts, etc.
+        return {"error": f"Error connecting to GitLab ({gitlab_url}): {e}"}
+    except Exception as e: # Catch-all for other unexpected errors like JSON decoding
+        return {"error": f"An unexpected error occurred during GitLab API call: {e}"}
 
 # --- SESSION STATE INITIALIZATION ---
 def initialize_session_state():
     # GitLab User Identification
-    if "gitlab_user_input" not in st.session_state:
-        st.session_state.gitlab_user_input = ""
-    if "current_gitlab_user" not in st.session_state: 
-        st.session_state.current_gitlab_user = None
-    if "user_identification_status" not in st.session_state: 
-        st.session_state.user_identification_status = "not_started"
-
-    # Quiz specific state
-    if "quiz_state" not in st.session_state: 
-        st.session_state.quiz_state = "awaiting_user" 
-    if "current_question_index" not in st.session_state:
-        st.session_state.current_question_index = 0
-    if "user_answers" not in st.session_state:
-        st.session_state.user_answers = []
-    if "score" not in st.session_state:
-        st.session_state.score = 0
-    if "quiz_questions" not in st.session_state:
-        st.session_state.quiz_questions = []
-    if "selected_option_key" not in st.session_state:
-        st.session_state.selected_option_key = 0
-    if "submitted_answer" not in st.session_state:
-        st.session_state.submitted_answer = None
-
-    # Chat
-    if "messages" not in st.session_state:
-        st.session_state.messages = [] 
-
-    # Store quiz attempts (session-based)
-    if "all_quiz_attempts" not in st.session_state:
-        st.session_state.all_quiz_attempts = {}
+    defaults = {
+        "gitlab_user_input": "",
+        "current_gitlab_user": None,
+        "user_identification_status": "not_started", # not_started, success, error
+        "quiz_state": "awaiting_user", # awaiting_user, user_identified, in_progress, feedback, completed
+        "current_question_index": 0,
+        "user_answers": [],
+        "score": 0,
+        "quiz_questions": [],
+        "selected_option_key": 0, # Used to ensure radio button uniqueness across quiz attempts
+        "submitted_answer": None,
+        "messages": [], # For chat interactions
+        "all_quiz_attempts": {} # Stores attempts keyed by user_id for the current browser session
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 # --- QUIZ DISPLAY AND LOGIC FUNCTIONS ---
 def display_question_and_feedback():
@@ -306,11 +301,12 @@ def display_question_and_feedback():
     st.markdown(f"<p class='question-text'>{question['text']}</p>", unsafe_allow_html=True)
 
     if st.session_state.quiz_state == "in_progress":
+        # Index=None means no default selection
         selected_option = st.radio(
             "Your answer:",
             question["options"],
-            index=None,
-            key=f"q_option_{st.session_state.selected_option_key}_{question_index}" # More unique key
+            index=None, 
+            key=f"q_option_{st.session_state.selected_option_key}_{question_index}"
         )
         if st.button("Submit Answer", key=f"submit_q_{question_index}"):
             if selected_option is not None:
@@ -326,35 +322,43 @@ def display_question_and_feedback():
 
         options_with_selection = question["options"]
         try:
-            selected_idx = options_with_selection.index(submitted)
-        except ValueError:
+            # Pre-select the user's submitted answer in the disabled radio group
+            selected_idx = options_with_selection.index(submitted) if submitted in options_with_selection else None
+        except ValueError: # Should not happen if submitted is from options
             selected_idx = None 
         
         st.radio(
             "Your answer was:",
             options_with_selection,
             index=selected_idx,
-            key=f"q_option_feedback_{st.session_state.selected_option_key}_{question_index}", # More unique key
+            key=f"q_option_feedback_{st.session_state.selected_option_key}_{question_index}",
             disabled=True
         )
 
         if is_correct:
             st.success(f"Correct! 🎉")
-            # Ensure score is added only once per question attempt if logic allows re-visiting feedback
-            if not any(ua['question_id'] == question['id'] and ua.get('scored', False) for ua in st.session_state.user_answers):
-                st.session_state.score += 1
-                # Mark as scored if implementing more complex navigation
+            # Score is added only once per unique question if not already scored in this attempt
+            # (current logic adds to user_answers once, so score is also effectively once)
+            # This check is more robust if one could revisit feedback for a scored question.
+            is_already_scored_this_attempt = any(
+                ua['question_id'] == question['id'] and ua.get('scored_this_attempt', False)
+                for ua in st.session_state.user_answers
+            )
+            if not is_already_scored_this_attempt:
+                 st.session_state.score += 1
+                 # We mark it as scored when adding to user_answers
         else:
             st.error(f"Not quite. The correct answer is: {question['correct_answer']}")
         
         with st.expander("Explanation & Resources", expanded=True):
             st.markdown("<div class='explanation-box'>", unsafe_allow_html=True)
             st.markdown(f"**Explanation:** {question['explanation']}")
-            if question['resource_link']:
+            if question.get('resource_link'):
                 st.markdown(f"**Learn more:** [Resource Link]({question['resource_link']})")
             st.markdown("</div>", unsafe_allow_html=True)
 
         # Add to user_answers (only once per question during a quiz attempt)
+        # Check if this specific question (by ID) has already been answered in this quiz attempt
         if not any(ua['question_id'] == question['id'] for ua in st.session_state.user_answers):
             st.session_state.user_answers.append({
                 "question_id": question["id"],
@@ -365,39 +369,47 @@ def display_question_and_feedback():
                 "topic": question["topic"],
                 "difficulty": question["difficulty"],
                 "explanation": question["explanation"],
-                "resource_link": question["resource_link"],
-                "scored": is_correct # track if this answer contributed to score
+                "resource_link": question.get("resource_link"),
+                "scored_this_attempt": is_correct # Mark if this answer contributed to the score
             })
 
         if st.button("Next Question", key=f"next_q_{question_index}"):
             st.session_state.current_question_index += 1
-            st.session_state.quiz_state = "in_progress"
-            # st.session_state.selected_option_key += 1 # Not strictly needed if key includes question_index
-            st.session_state.submitted_answer = None
+            st.session_state.submitted_answer = None # Clear submitted answer for next q
             if st.session_state.current_question_index >= len(st.session_state.quiz_questions):
                 st.session_state.quiz_state = "completed"
+            else:
+                st.session_state.quiz_state = "in_progress"
             st.rerun()
     st.markdown(f"</div>", unsafe_allow_html=True)
+
 
 # --- DISPLAY RESULTS ---
 def display_results():
     if not st.session_state.current_gitlab_user:
         st.error("Cannot display results. No GitLab user identified for this session.")
-        # Optionally, guide user back to identification
         if st.button("Identify User"):
-            st.session_state.quiz_state = "awaiting_user"
+            st.session_state.quiz_state = "awaiting_user" # Go back to user identification
+            # Minimal reset, user might want to see past attempts if they re-identify
+            st.session_state.current_question_index = 0
+            st.session_state.user_answers = []
+            st.session_state.score = 0
+            st.session_state.quiz_questions = []
             st.rerun()
         return
 
-    user_name = st.session_state.current_gitlab_user.get('name', 'Quiz Taker')
+    user_name = st.session_state.current_gitlab_user.get('name', st.session_state.current_gitlab_user.get('username','Quiz Taker'))
     st.markdown("<div class='quiz-container results-summary'>", unsafe_allow_html=True)
     st.header(f"✨ Quiz Results for {user_name} ✨")
     
     total_questions = len(st.session_state.quiz_questions)
-    score = st.session_state.score
-    percentage = (score / total_questions * 100) if total_questions > 0 else 0
+    if total_questions == 0: # Avoid division by zero if quiz had no questions
+        st.warning("No questions were presented in this quiz.")
+        percentage = 0
+    else:
+        percentage = (st.session_state.score / total_questions * 100)
     
-    st.subheader(f"Your Score: {score}/{total_questions} ({percentage:.2f}%)")
+    st.subheader(f"Your Score: {st.session_state.score}/{total_questions} ({percentage:.2f}%)")
 
     if percentage >= 80:
         st.balloons()
@@ -454,10 +466,9 @@ def display_results():
                 st.markdown(f"**Correct Answer:** <span class='correct-answer-feedback'>{ans['correct_answer']}</span>", unsafe_allow_html=True)
                 st.markdown("<div class='explanation-box'>", unsafe_allow_html=True)
                 st.markdown(f"**Explanation:** {ans['explanation']}")
-                if ans['resource_link']:
+                if ans.get('resource_link'):
                     st.markdown(f"**Learn more:** [Resource Link]({ans['resource_link']})")
                 st.markdown("</div>", unsafe_allow_html=True)
-    
     st.markdown("---")
 
     user_id = st.session_state.current_gitlab_user['id']
@@ -466,48 +477,63 @@ def display_results():
     
     current_attempt_data = {
         "timestamp": datetime.now().isoformat(),
-        "score": score,
+        "score": st.session_state.score,
         "total_questions": total_questions,
         "percentage": percentage,
-        "answers_details": st.session_state.user_answers 
+        "answers_details": st.session_state.user_answers # Storing a copy of answers for this attempt
     }
     
-    # Simple check to avoid duplicate storage on refresh of results page
-    last_attempt_time = None
+    # Avoid duplicate storage on refresh of results page if data is identical to last save
+    # This check is basic; more robust would be to check content if needed
+    save_attempt = True
     if st.session_state.all_quiz_attempts[user_id]:
-        last_attempt_time_str = st.session_state.all_quiz_attempts[user_id][-1].get("timestamp")
-        if last_attempt_time_str:
-            last_attempt_time = datetime.fromisoformat(last_attempt_time_str)
+        last_saved_attempt = st.session_state.all_quiz_attempts[user_id][-1]
+        # Compare current attempt data (excluding timestamp) with the last saved one
+        # This is a simple check; for full robustness, compare relevant fields
+        if (last_saved_attempt["score"] == current_attempt_data["score"] and
+            last_saved_attempt["total_questions"] == current_attempt_data["total_questions"] and
+            len(last_saved_attempt["answers_details"]) == len(current_attempt_data["answers_details"])):
+            
+            # Check if timestamps are very close (e.g., within a few seconds) to avoid saving on mere refresh
+            last_attempt_time = datetime.fromisoformat(last_saved_attempt["timestamp"])
+            if (datetime.now() - last_attempt_time).total_seconds() < 10: # Threshold of 10 seconds
+                save_attempt = False
+                # st.info("Results already saved for this attempt.") # Optional user feedback
 
-    if not last_attempt_time or (datetime.now() - last_attempt_time).total_seconds() > 10: 
+    if save_attempt:
         st.session_state.all_quiz_attempts[user_id].append(current_attempt_data)
         st.success(f"Quiz attempt saved for {user_name} (session-based).")
 
 
     if st.button("Take Quiz Again (as same user)", key="retake_quiz"):
+        # Reset for a new quiz attempt for the same user
         st.session_state.quiz_state = "user_identified" 
         st.session_state.current_question_index = 0
         st.session_state.user_answers = []
         st.session_state.score = 0
         st.session_state.quiz_questions = [] 
-        st.session_state.selected_option_key += 1000 # Make radio keys very different
+        st.session_state.selected_option_key += 1000 # Ensure radio/widget keys are fresh
         st.session_state.submitted_answer = None
-        st.session_state.messages = [{"role": "assistant", "content": f"Hi {user_name}! Ready for another round?"}] # Reset chat messages
+        # Reset chat messages to welcome user back for another round
+        st.session_state.messages = [{"role": "assistant", "content": f"Hi {user_name}! Ready for another round of the Git & GitLab Quiz?"}]
         st.rerun()
 
     if st.button("Identify Different User / Logout", key="logout_user"):
-        # Full reset
-        for key in list(st.session_state.keys()): # Iterate over a copy of keys
-            if key not in ['all_quiz_attempts']: # Optionally preserve all_quiz_attempts across user logouts in the same browser session
-                del st.session_state[key]
-        initialize_session_state() # Re-initialize to default start
+        # Full reset for a new user session
+        # Preserving 'all_quiz_attempts' means history is kept for the browser session,
+        # but new user will only see their own history due to user_id filtering.
+        preserved_keys = ['all_quiz_attempts']
+        keys_to_delete = [k for k in st.session_state.keys() if k not in preserved_keys]
+        for key in keys_to_delete:
+            del st.session_state[key]
+        initialize_session_state() # Re-initialize all other states to default
         st.rerun()
 
 # --- MAIN APP LAYOUT ---
 def main():
     st.set_page_config(layout="wide", page_title="Git & GitLab QuizBot")
-    local_css("style.css") # Apply custom CSS
-    initialize_session_state() # Initialize/load states
+    local_css("style.css") # Apply custom CSS from style.css
+    initialize_session_state() # Initialize/load all session states
 
     st.markdown("<h1 style='text-align: center; color: #0056b3;'>🎓 Git & GitLab Tech Quiz 🚀</h1>", unsafe_allow_html=True)
 
@@ -517,83 +543,109 @@ def main():
         st.markdown("---")
         
         with st.form(key="gitlab_user_form"):
-            username_input_val = st.text_input("Enter your GitLab Username:", value=st.session_state.gitlab_user_input, key="gitlab_username_field")
+            # Use st.session_state.gitlab_user_input to prefill if user tried before
+            username_input_val = st.text_input(
+                "Enter your GitLab Username:", 
+                value=st.session_state.gitlab_user_input, 
+                key="gitlab_username_field",
+                placeholder="e.g., nikhil7g"
+            )
             submit_button = st.form_submit_button(label="Find My GitLab Profile")
 
         if submit_button:
+            st.session_state.gitlab_user_input = username_input_val # Store last input
             if not username_input_val:
                 st.warning("Please enter a GitLab username.")
-                st.session_state.user_identification_status = "not_started"
+                st.session_state.user_identification_status = "error" # Or "not_started"
             else:
-                st.session_state.gitlab_user_input = username_input_val
-                with st.spinner(f"Fetching profile for {username_input_val}..."):
+                with st.spinner(f"Fetching profile for '{username_input_val}'..."):
                     user_data_fetched = fetch_gitlab_user_by_username(username_input_val)
                 
                 if user_data_fetched and "error" not in user_data_fetched:
                     st.session_state.current_gitlab_user = user_data_fetched
                     st.session_state.user_identification_status = "success"
                     st.session_state.quiz_state = "user_identified"
-                    st.session_state.messages = [{"role": "assistant", "content": f"Hi {user_data_fetched.get('name', username_input_val)}! Ready to test your Git & GitLab knowledge?"}]
+                    # Initialize chat messages for the identified user
+                    user_display_name = user_data_fetched.get('name', username_input_val)
+                    st.session_state.messages = [{"role": "assistant", "content": f"Hi {user_display_name}! Ready to test your Git & GitLab knowledge? Type 'start quiz' or 'yes'."}]
                     st.rerun()
                 elif user_data_fetched and "error" in user_data_fetched:
                     st.error(f"Could not fetch profile: {user_data_fetched['error']}")
                     st.session_state.user_identification_status = "error"
-                else: # User not found
+                else: # User not found (fetch_gitlab_user_by_username returns None)
                     st.error(f"GitLab user '{username_input_val}' not found. Please check the username and try again.")
                     st.session_state.user_identification_status = "error"
         
-        st.caption("ℹ️ For this app to connect to GitLab, ensure `GITLAB_URL` (optional, defaults to gitlab.com) and `GITLAB_PAT` (required, with `read_user` scope) are set in `.streamlit/secrets.toml` or a local `.env` file.")
+        st.caption("ℹ️ For this app to connect to GitLab, ensure `GITLAB_URL` (optional, defaults to gitlab.com) and `GITLAB_PAT` (required, with `read_user` scope) are set in `.streamlit/secrets.toml` (for deployed apps) or a local `.env` file (for development).")
 
     # --- User Identified, Offer Quiz ---
     elif st.session_state.quiz_state == "user_identified":
         if st.session_state.current_gitlab_user:
-            user_info_data = st.session_state.current_gitlab_user
-            cols_id = st.columns([1,4]) # Using st.columns for layout
+            user_info = st.session_state.current_gitlab_user
+            user_display_name = user_info.get('name', user_info.get('username', "User"))
+
+            cols_id = st.columns([1,4]) 
             with cols_id[0]:
-                if user_info_data.get('avatar_url'):
-                    st.image(user_info_data['avatar_url'], width=100, caption=user_info_data.get('name', user_info_data['username']))
+                if user_info.get('avatar_url'):
+                    st.image(user_info['avatar_url'], width=100, caption=user_display_name)
+                else:
+                    st.markdown(f"👤 **{user_display_name}**", unsafe_allow_html=True) # Fallback if no avatar
             with cols_id[1]:
-                st.subheader(f"Welcome, {user_info_data.get('name', user_info_data['username'])}!")
-                st.markdown(f"GitLab User ID: `{user_info_data['id']}` | Username: `@{user_info_data['username']}`")
+                st.subheader(f"Welcome, {user_display_name}!")
+                st.markdown(f"GitLab User ID: `{user_info.get('id', 'N/A')}` | Username: `@{user_info.get('username', 'N/A')}`")
             st.markdown("---")
 
             # Chat-like interaction to start quiz
-            chat_container = st.container(height=200) # Constrain chat height
+            # Use a container for better layout of chat messages if they grow
+            chat_container = st.container(height=250) # Set fixed height for scroll
             with chat_container:
-                for message in st.session_state.messages[-5:]: # Show last few messages
-                    with st.chat_message(message["role"], avatar="🧑‍💻" if message["role"] == "user" else "🤖"):
-                        st.markdown(message["content"])
+                for msg in st.session_state.messages[-10:]: # Show last N messages
+                    with st.chat_message(msg["role"], avatar="🧑‍💻" if msg["role"] == "user" else "🤖"):
+                        st.markdown(msg["content"])
             
-            if prompt_val := st.chat_input(f"Type 'start quiz' or 'yes' to begin, {user_info_data.get('name', 'User')}...", key=f"quiz_chat_user_identified_{st.session_state.selected_option_key}"):
-                st.session_state.messages.append({"role": "user", "content": prompt_val})
-                prompt_lower_val = prompt_val.lower()
-                response_text = ""
-                if "start" in prompt_lower_val or "yes" in prompt_lower_val:
+            # Key for chat_input needs to be stable or change meaningfully
+            prompt = st.chat_input(f"Type 'start quiz' or 'yes', {user_display_name}...", key=f"quiz_start_chat_{user_info.get('id', 'unknownuser')}")
+            
+            if prompt:
+                st.session_state.messages.append({"role": "user", "content": prompt})
+                prompt_lower = prompt.lower()
+                
+                if any(keyword in prompt_lower for keyword in ["start", "yes", "begin", "ok", "sure"]):
                     st.session_state.quiz_state = "in_progress"
-                    st.session_state.quiz_questions = get_quiz_questions(15)
-                    st.session_state.current_question_index = 0
-                    st.session_state.user_answers = [] 
-                    st.session_state.score = 0         
-                    st.session_state.selected_option_key += 1 # To refresh chat input if needed
-                    st.session_state.submitted_answer = None
-                    response_text = "Great! Starting the quiz now. Answer the questions as they appear below."
-                    st.session_state.messages.append({"role": "assistant", "content": response_text})
+                    st.session_state.quiz_questions = get_quiz_questions(15) # Default 15 questions
+                    if not st.session_state.quiz_questions:
+                        st.error("Failed to load quiz questions. Please try again or contact support.")
+                        st.session_state.quiz_state = "user_identified" # Revert state
+                    else:
+                        st.session_state.current_question_index = 0
+                        st.session_state.user_answers = [] 
+                        st.session_state.score = 0         
+                        st.session_state.submitted_answer = None
+                        response_text = "Great! Starting the quiz now... Answer the questions as they appear below."
+                        st.session_state.messages.append({"role": "assistant", "content": response_text})
                 else:
-                    response_text = "Okay, let me know when you're ready to start the quiz!"
+                    response_text = "Okay, I'm here when you're ready. Just type 'start quiz'!"
                     st.session_state.messages.append({"role": "assistant", "content": response_text})
                 st.rerun()
             
-            user_id_attempts = st.session_state.current_gitlab_user['id']
-            if user_id_attempts in st.session_state.all_quiz_attempts and st.session_state.all_quiz_attempts[user_id_attempts]:
-                with st.expander("View Your Past Quiz Attempts (This Session)"):
-                    for i, attempt_item in enumerate(st.session_state.all_quiz_attempts[user_id_attempts]):
-                        dt_object_item = datetime.fromisoformat(attempt_item['timestamp'])
-                        formatted_time_item = dt_object_item.strftime("%Y-%m-%d %H:%M:%S")
-                        st.write(f"Attempt {i+1} on {formatted_time_item}: Score {attempt_item['score']}/{attempt_item['total_questions']} ({attempt_item['percentage']:.2f}%)")
+            # Display past quiz attempts for this user (from current session)
+            user_id = user_info.get('id')
+            if user_id and user_id in st.session_state.all_quiz_attempts and st.session_state.all_quiz_attempts[user_id]:
+                with st.expander("View Your Past Quiz Attempts (This Session Only)"):
+                    attempts_for_user = st.session_state.all_quiz_attempts[user_id]
+                    for i, attempt in enumerate(reversed(attempts_for_user)): # Show newest first
+                        dt_object = datetime.fromisoformat(attempt['timestamp'])
+                        formatted_time = dt_object.strftime("%Y-%m-%d %H:%M:%S")
+                        st.write(f"Attempt {len(attempts_for_user)-i} on {formatted_time}: Score {attempt['score']}/{attempt['total_questions']} ({attempt['percentage']:.2f}%)")
+        else: # Should not happen if quiz_state is user_identified
+            st.error("User not identified. Please go back and enter your GitLab username.")
+            if st.button("Go to User Identification"):
+                st.session_state.quiz_state = "awaiting_user"
+                st.rerun()
 
     # --- Quiz In Progress or Feedback ---
     elif st.session_state.quiz_state in ["in_progress", "feedback"]:
-        if not st.session_state.quiz_questions:
+        if not st.session_state.quiz_questions: # Should be loaded before this state
             st.warning("Quiz questions not loaded. Please try starting the quiz again.")
             st.session_state.quiz_state = "user_identified" 
             st.rerun()
@@ -604,12 +656,13 @@ def main():
     elif st.session_state.quiz_state == "completed":
         display_results()
 
+    # --- Fallback for any invalid state ---
     else: 
-        st.error("Invalid application state. Resetting.")
-        # Full reset to avoid loops
+        st.error(f"Invalid application state: '{st.session_state.quiz_state}'. Resetting to start.")
+        # Full reset to avoid loops or undefined behavior
         for key in list(st.session_state.keys()):
             del st.session_state[key]
-        initialize_session_state()
+        initialize_session_state() # Re-initialize all states to their defaults
         st.rerun()
 
 if __name__ == "__main__":
